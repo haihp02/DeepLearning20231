@@ -8,6 +8,10 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+<<<<<<< HEAD
+=======
+env/
+>>>>>>> bca86b5c8c0221fe59bad6cf93a2198cb94348ad
 build/
 develop-eggs/
 dist/
@@ -20,11 +24,17 @@ parts/
 sdist/
 var/
 wheels/
+<<<<<<< HEAD
 share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
+=======
+*.egg-info/
+.installed.cfg
+*.egg
+>>>>>>> bca86b5c8c0221fe59bad6cf93a2198cb94348ad
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -39,17 +49,24 @@ pip-delete-this-directory.txt
 # Unit test / coverage reports
 htmlcov/
 .tox/
+<<<<<<< HEAD
 .nox/
+=======
+>>>>>>> bca86b5c8c0221fe59bad6cf93a2198cb94348ad
 .coverage
 .coverage.*
 .cache
 nosetests.xml
 coverage.xml
 *.cover
+<<<<<<< HEAD
 *.py,cover
 .hypothesis/
 .pytest_cache/
 cover/
+=======
+.hypothesis/
+>>>>>>> bca86b5c8c0221fe59bad6cf93a2198cb94348ad
 
 # Translations
 *.mo
@@ -58,8 +75,11 @@ cover/
 # Django stuff:
 *.log
 local_settings.py
+<<<<<<< HEAD
 db.sqlite3
 db.sqlite3-journal
+=======
+>>>>>>> bca86b5c8c0221fe59bad6cf93a2198cb94348ad
 
 # Flask stuff:
 instance/
@@ -72,12 +92,16 @@ instance/
 docs/_build/
 
 # PyBuilder
+<<<<<<< HEAD
 .pybuilder/
+=======
+>>>>>>> bca86b5c8c0221fe59bad6cf93a2198cb94348ad
 target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
 
+<<<<<<< HEAD
 # IPython
 profile_default/
 ipython_config.py
@@ -115,10 +139,18 @@ __pypackages__/
 # Celery stuff
 celerybeat-schedule
 celerybeat.pid
+=======
+# pyenv
+.python-version
+
+# celery beat schedule file
+celerybeat-schedule
+>>>>>>> bca86b5c8c0221fe59bad6cf93a2198cb94348ad
 
 # SageMath parsed files
 *.sage.py
 
+<<<<<<< HEAD
 # Environments
 .env
 .venv
@@ -127,6 +159,15 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+=======
+# dotenv
+.env
+
+# virtualenv
+.venv
+venv/
+ENV/
+>>>>>>> bca86b5c8c0221fe59bad6cf93a2198cb94348ad
 
 # Spyder project settings
 .spyderproject
@@ -140,6 +181,7 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+<<<<<<< HEAD
 .dmypy.json
 dmypy.json
 
@@ -158,3 +200,16 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+=======
+
+# input data, saved log, checkpoints
+data/
+input/
+saved/
+datasets/
+
+# editor, os cache directory
+.vscode/
+.idea/
+__MACOSX/
+>>>>>>> bca86b5c8c0221fe59bad6cf93a2198cb94348ad
