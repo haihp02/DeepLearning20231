@@ -2,6 +2,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel
 import torch
+from sentence_transformers import SentenceTransformer
+from sentence_transformers.util import batch_to_device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -121,7 +123,7 @@ class BERT(BaseModel):
     def forward(self, input_tensor: torch.Tensor, attention_mask: torch.Tensor):
         raise NotImplementedError  
     
-    def load_weights_from_huggingface(self,model_name):
+    def load_weights_from_huggingface(self, model_name):
         # Load weights manually from Hugging Face checkpoint
         # This example assumes 'model_name' is the path to the checkpoint
         # You'll need to load individual weights and set them to corresponding layers
@@ -133,4 +135,60 @@ class BERT(BaseModel):
         self.embedding.segment_emb.weight = nn.Parameter(torch.tensor(...))  # Load segment_emb weights
 
         # Load other weights for Encoder, token_prediction_layer, classification_layer, etc.
-    
+
+
+class SentenceTransformersWrapperForLM(nn.Module):
+
+    def __init__(self, config):
+        super(SentenceTransformersWrapperForLM, self).__init__()
+        self.config = config
+
+        if config.model_name:
+            self.model = SentenceTransformer(config.model_name)
+        elif config.model_path:
+            self.model = SentenceTransformer(config.model_path)
+        
+        self.lm_output_layer = nn.Sequential(
+            nn.LazyLinear(out_features=config.hidden_size),
+            nn.Dropout(p=config.dropout),
+            nn.Linear(in_features=config.hidden_size, out_features=config.vocab_size)
+        )
+
+    def forward(self, input_features):
+        '''
+        input_features: dict, include:
+        - input_ids: (batch_size, seq_len)
+        - attention_mask: (batch_size, seq_len)
+        - token_type_ids: optional (batch_size, seq_len)
+
+        return: 
+        - type: dict with 'token_embddings', 'sentence_embeddings' and 'language_model_logits'
+        - 'token_embeddings': last layer embeddings for all tokens in all sentences in batch (batch_size, seq_len, embeddings_size)
+        - 'sentence_embedding': sentence embeddings for all sentences in batch (batch_size, seq_len)
+        - 'language_model_logits': logits for language modelling (batch_size, seq_len, vocab_size)
+        '''
+        out_features = self.model.forward(input_features)
+
+        embeddings = []
+        for sent_idx in range(len(out_features['sentence_embedding'])):
+            row = {name: out_features[name][sent_idx] for name in out_features}
+            embeddings.append(row)
+        
+        batch_output = {}
+        batch_output['token_embeddings'] = torch.stack([embedding['token_embeddings'] for embedding in embeddings])
+        batch_output['sentence_embedding'] = torch.stack([embedding['sentence_embedding'] for embedding in embeddings])
+        batch_output['language_model_logits'] = torch.stack([self.lm_output_layer(embedding['token_embeddings']) for embedding in embeddings])
+        return batch_output
+        
+    def _extend_vocab_size(self, new_vocab_size=None):
+        '''
+        Update model embedding layer for larger vocabulary, keeps all the trained embeddings
+        '''
+        if not new_vocab_size:
+            new_vocab_size = self.config.vocab_size
+        old_embedding_layer = self.model._first_module().auto_model.embeddings.word_embeddings
+        old_vocab_size = old_embedding_layer.weight.shape[0]
+        embedding_size = old_embedding_layer.weight.shape[1]
+        new_embedding_layer = nn.Embedding(num_embeddings=new_vocab_size, embedding_dim=embedding_size)
+        new_embedding_layer.weight.data[:old_vocab_size] = old_embedding_layer.weight.data
+        self.model._first_module().auto_model.embeddings.word_embeddings = new_embedding_layer

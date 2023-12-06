@@ -1,23 +1,16 @@
-from datasets import Dataset
-from itertools import chain
-from datasets import load_dataset
 from tqdm import tqdm
-from transformers import BertTokenizerFast
 from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, Union
-import numpy as np
 from collections.abc import Mapping
-import pandas as pd
+from itertools import chain
 
-from datasets import Dataset
-from itertools import chain
-from datasets import load_dataset
-from tqdm import tqdm
-from transformers import BertTokenizerFast
-from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, Union
+from datasets import Dataset, load_dataset
+from transformers import BertTokenizerFast, AutoTokenizer
 import numpy as np
-from collections.abc import Mapping
 import pandas as pd
-from transformers import AutoTokenizer
+from torch.utils.data.dataloader import DataLoader, default_collate
+
+from base.base_data_loader import BaseDataLoader
+
 class MSMarcoDataset(Dataset):
     """
     MS Macro data loading using Dataset
@@ -43,9 +36,6 @@ class MSMarcoDataset(Dataset):
         if not line_by_line:
             self.dataset = self.dataset.map(self.group_texts, batched=True, num_proc=1)
         self.dataset = self.dataset.map(self.torch_call)
-        
-        
-        
 
     def __len__(self) -> int:
         raise len(self.dataset)
@@ -119,7 +109,17 @@ class MSMarcoDataset(Dataset):
         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
         return inputs, labels
 
+class MLMDataLoader(BaseDataLoader):
+    def __init__(self, dataset, batch_size, shuffle, validation_split, num_workers, collate_fn=default_collate):
+        super(MLMDataLoader, self).__init__(
+            dataset=dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            validation_split=validation_split,
+            num_workers=num_workers,
+            collate_fn=collate_fn
+        )
+
 if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained("nreimers/MiniLM-L6-H384-uncased")
     msmarco = MSMarcoDataset(r'C:\Users\thanh\OneDrive\Desktop\20231\Deep Learing\DeepLearning20231\data_loader\sample.tsv',tokenizer = tokenizer)
-    print(msmarco[0])
