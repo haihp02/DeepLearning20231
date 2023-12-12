@@ -1,9 +1,11 @@
 import torch.nn as nn
 import torch.nn.functional as F
-from base import BaseModel
 import torch
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import batch_to_device
+
+from base import BaseModel
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -137,22 +139,30 @@ class BERT(BaseModel):
         # Load other weights for Encoder, token_prediction_layer, classification_layer, etc.
 
 
-class SentenceTransformersWrapperForLM(nn.Module):
+class SentenceTransformersWrapperForLM(BaseModel):
 
-    def __init__(self, config):
+    def __init__(self, model_name, model_path, hidden_size, dropout, vocab_size, load_path=None):
         super(SentenceTransformersWrapperForLM, self).__init__()
-        self.config = config
-
-        if config.model_name:
-            self.model = SentenceTransformer(config.model_name)
-        elif config.model_path:
-            self.model = SentenceTransformer(config.model_path)
         
+        self.model_name = model_name
+        self.model_path = model_path
+        self.vocal_size = vocab_size
+
+        if model_name:
+            self.model = SentenceTransformer(model_name)
+        elif model_path:
+            self.model = SentenceTransformer(model_path)
+        self._extend_vocab_size(vocab_size)
         self.lm_output_layer = nn.Sequential(
-            nn.LazyLinear(out_features=config.hidden_size),
-            nn.Dropout(p=config.dropout),
-            nn.Linear(in_features=config.hidden_size, out_features=config.vocab_size)
+            nn.LazyLinear(out_features=hidden_size),
+            nn.Dropout(p=dropout),
+            nn.Linear(in_features=hidden_size, out_features=vocab_size)
         )
+
+        if load_path is not None:
+            torch_model_checkpoint = torch.load(load_path, map_location='cpu')
+            self.load_state_dict(torch_model_checkpoint['state_dict'])
+            print('Loaded model from', load_path)
 
     def forward(self, input_features):
         '''
@@ -165,7 +175,7 @@ class SentenceTransformersWrapperForLM(nn.Module):
         - type: dict with 'token_embddings', 'sentence_embeddings' and 'language_model_logits'
         - 'token_embeddings': last layer embeddings for all tokens in all sentences in batch (batch_size, seq_len, embeddings_size)
         - 'sentence_embedding': sentence embeddings for all sentences in batch (batch_size, seq_len)
-        - 'language_model_logits': logits for language modelling (batch_size, seq_len, vocab_size)
+        - 'language_model_logits': logits for language modelling (batch_size, vocab_size, seq_len)
         '''
         out_features = self.model.forward(input_features)
 
@@ -177,7 +187,7 @@ class SentenceTransformersWrapperForLM(nn.Module):
         batch_output = {}
         batch_output['token_embeddings'] = torch.stack([embedding['token_embeddings'] for embedding in embeddings])
         batch_output['sentence_embedding'] = torch.stack([embedding['sentence_embedding'] for embedding in embeddings])
-        batch_output['language_model_logits'] = torch.stack([self.lm_output_layer(embedding['token_embeddings']) for embedding in embeddings])
+        batch_output['language_model_logits'] = torch.stack([self.lm_output_layer(embedding['token_embeddings']) for embedding in embeddings]).swapaxes(1, 2)
         return batch_output
         
     def _extend_vocab_size(self, new_vocab_size=None):
@@ -185,10 +195,79 @@ class SentenceTransformersWrapperForLM(nn.Module):
         Update model embedding layer for larger vocabulary, keeps all the trained embeddings
         '''
         if not new_vocab_size:
-            new_vocab_size = self.config.vocab_size
+            new_vocab_size = self.vocab_size
         old_embedding_layer = self.model._first_module().auto_model.embeddings.word_embeddings
         old_vocab_size = old_embedding_layer.weight.shape[0]
         embedding_size = old_embedding_layer.weight.shape[1]
         new_embedding_layer = nn.Embedding(num_embeddings=new_vocab_size, embedding_dim=embedding_size)
         new_embedding_layer.weight.data[:old_vocab_size] = old_embedding_layer.weight.data
         self.model._first_module().auto_model.embeddings.word_embeddings = new_embedding_layer
+
+class BERTBiEncoder(nn.Module):
+    def __init__(
+        self,
+        query_encoder_name,
+        query_encoder_path,
+        passage_encoder_name,
+        passage_encoder_path,
+        vocab_size,
+        load_path=None,
+        query_encoder_load_path=None,
+        passage_encoder_load_path=None,
+    ):
+        super(BERTBiEncoder, self).__init__()
+        
+        self.query_encoder_name = query_encoder_name
+        self.query_encoder_path = query_encoder_path
+        self.passage_encoder_name = passage_encoder_name
+        self.passage_encoder_path = passage_encoder_path
+        self.vocab_size = vocab_size
+
+        if query_encoder_name:
+            self.query_encoder = SentenceTransformer(query_encoder_name)
+        elif query_encoder_path:
+            self.query_encoder = SentenceTransformer(query_encoder_path)
+        self._extend_encoder_vocab_size(encoder=self.query_encoder, new_vocab_size=vocab_size)
+        
+        if passage_encoder_name:
+            self.passage_encoder = SentenceTransformer(passage_encoder_name)
+        elif passage_encoder_path:
+            self.passage_encoder = SentenceTransformer(passage_encoder_path)
+        self._extend_encoder_vocab_size(encoder=self.passage_encoder, new_vocab_size=vocab_size)
+        
+        if load_path is not None:
+            torch_model_checkpoint = torch.load(load_path, map_location='cpu')
+            self.load_state_dict(torch_model_checkpoint['state_dict'])
+            print('Loaded model from', load_path)
+        if query_encoder_load_path is not None:
+            torch_model_checkpoint = torch.load(query_encoder_load_path, map_location='cpu')
+            self.query_encoder.load_state_dict(torch_model_checkpoint['state_dict'])
+            print('Loaded query encoder from', query_encoder_load_path)
+        if passage_encoder_load_path is not None:
+            torch_model_checkpoint = torch.load(passage_encoder_load_path, map_location='cpu')
+            self.passage_encoder.load_state_dict(torch_model_checkpoint['state_dict'])
+            print('Loaded model from', passage_encoder_load_path)
+
+    def forward(self, query_features, passage_features):
+        query_embeddings = self.query_encoder.forward(query_features)['sentence_embedding']
+        passage_embeddings = self.passage_encoder.forward(passage_features)['sentence_embedding']
+        scores = torch.stack([F.cosine_similarity(q_emb, passage_embeddings) for q_emb in query_embeddings])
+        outputs = {
+            'scores': scores,
+            'query_embeddings': query_embeddings,
+            'passage_embeddings': passage_embeddings
+        }
+        return outputs
+
+    def _extend_encoder_vocab_size(self, encoder: SentenceTransformer, new_vocab_size=None):
+        '''
+        Update model embedding layer for larger vocabulary, keeps all the trained embeddings
+        '''
+        if not new_vocab_size:
+            new_vocab_size = self.vocab_size
+        old_embedding_layer = encoder._first_module().auto_model.embeddings.word_embeddings
+        old_vocab_size = old_embedding_layer.weight.shape[0]
+        embedding_size = old_embedding_layer.weight.shape[1]
+        new_embedding_layer = nn.Embedding(num_embeddings=new_vocab_size, embedding_dim=embedding_size)
+        new_embedding_layer.weight.data[:old_vocab_size] = old_embedding_layer.weight.data
+        encoder._first_module().auto_model.embeddings.word_embeddings = new_embedding_layer        

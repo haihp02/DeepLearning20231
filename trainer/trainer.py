@@ -108,3 +108,74 @@ class Trainer(BaseTrainer):
             current = batch_idx
             total = self.len_epoch
         return base.format(current, total, 100.0 * current / total)
+
+class BertTrainer(Trainer):
+    def __init__(self, model, criterion, metric_ftns, optimizer, config, device, data_loader, valid_data_loader=None, lr_scheduler=None, len_epoch=None):
+        super(BertTrainer, self).__init__(model, criterion, metric_ftns, optimizer, config, device, data_loader, valid_data_loader, lr_scheduler, len_epoch)
+
+    def _train_epoch(self, epoch):
+        """
+        Training logic for an epoch of BERT models
+        """
+        for batch_idx, batch in enumerate(self.data_loader):
+            input_features = {
+                'input_ids': batch['input_ids'].to(self.device),
+                'attention_mask': batch['attention_mask'].to(self.device),
+                'token_type_ids': batch['token_type_ids'].to(self.device)
+            }
+            target = batch['labels'].to(self.device)
+
+            self.optimizer.zero_grad()
+            # Calculate loss
+            output = self.model(input_features)
+            loss = self.criterion(output, target)
+            loss.backward()
+            self.optimizer.step()
+
+            self.writer.set_step((epoch - 1) * self.len_epoch + batch_idx)
+            self.train_metrics.update('loss', loss.item())
+            for met in self.metric_ftns:
+                self.train_metrics.update(met.__name__, met(output, target))
+
+            if batch_idx % self.log_step == 0:
+                self.logger.debug('Train Epoch: {} {} Loss: {:.6f}'.format(
+                    epoch,
+                    self._progress(batch_idx),
+                    loss.item()))
+
+            if batch_idx == self.len_epoch:
+                break
+        log = self.train_metrics.result()
+
+        if self.do_validation:
+            val_log = self._valid_epoch(epoch)
+            log.update(**{'val_'+k : v for k, v in val_log.items()})
+
+        if self.lr_scheduler is not None:
+            self.lr_scheduler.step()
+        return log
+    
+    def _valid_epoch(self, epoch):
+        self.model.eval()
+        self.valid_metrics.reset()
+        with torch.no_grad():
+            for batch_idx, batch in enumerate(self.valid_data_loader):
+                input_features = {
+                    'input_ids': batch['input_ids'].to(self.device),
+                    'attention_mask': batch['attention_mask'].to(self.device),
+                    'token_type_ids': batch['token_type_ids'].to(self.device)
+                }
+                target = batch['labels'].to(self.device)
+
+                output = self.model(input_features)
+                loss = self.criterion(output, target)
+
+                self.writer.set_step((epoch - 1) * len(self.valid_data_loader) + batch_idx, 'valid')
+                self.valid_metrics.update('loss', loss.item())
+                for met in self.metric_ftns:
+                    self.valid_metrics.update(met.__name__, met(output, target))
+
+        # add histogram of model parameters to the tensorboard
+        for name, p in self.model.named_parameters():
+            self.writer.add_histogram(name, p, bins='auto')
+        return self.valid_metrics.result()
